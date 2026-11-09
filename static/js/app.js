@@ -82,6 +82,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const suggestionsWrapper = document.getElementById("suggestions-wrapper");
     const suggestionsContainer = document.getElementById("suggestions-container");
 
+    const languageSelect = document.getElementById("language-select");
+    const originalTextSub = document.getElementById("original-text-sub");
+
     const toggleAutolock = document.getElementById("toggle-autolock");
     const holdProgressBar = document.getElementById("hold-progress-bar");
     const holdProgressFill = document.getElementById("hold-progress-fill");
@@ -95,6 +98,29 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentPredictedSign = null;
     let currentMode = "alphabets"; // "alphabets" or "words"
     let currentFullText = "";
+
+    // Multi-Language Translation & Speech state
+    let selectedLanguage = "en";
+    let rawEnglishText = "";
+    let translatedDisplayText = "";
+    let translationCache = {};
+    let translateDebounceTimer = null;
+    let currentTtsAudio = null;
+
+    const LANG_VOICE_MAP = {
+        "en": "en-IN",
+        "hi": "hi-IN",
+        "te": "te-IN",
+        "ta": "ta-IN",
+        "kn": "kn-IN",
+        "ml": "ml-IN",
+        "mr": "mr-IN",
+        "bn": "bn-IN",
+        "gu": "gu-IN",
+        "es": "es-ES",
+        "fr": "fr-FR",
+        "de": "de-DE"
+    };
 
     // State locks and memoization to eliminate blinking & race conditions
     let lastRenderedSuggestions = null;
@@ -280,31 +306,90 @@ document.addEventListener("DOMContentLoaded", () => {
         if (holdProgressFill) holdProgressFill.style.width = "0%";
     }
 
-    // --- Unified Text Box Display (Smooth, non-blinking cursor) ---
+    // --- Multi-Language Rendering & Unified Text Box Display ---
+    function renderDisplayBox(displayText, originalText) {
+        if (!textContentEl || !placeholderMsgEl) return;
+
+        if (displayText && displayText.trim() !== "") {
+            placeholderMsgEl.style.display = "none";
+            textContentEl.textContent = displayText;
+
+            if (selectedLanguage !== "en" && originalText && originalText.trim() !== "") {
+                if (originalTextSub) {
+                    originalTextSub.style.display = "flex";
+                    originalTextSub.innerHTML = `<span class="badge-isl">ISL</span> <span>${escapeHtml(originalText)}</span>`;
+                }
+            } else {
+                if (originalTextSub) originalTextSub.style.display = "none";
+            }
+        } else {
+            textContentEl.textContent = "";
+            placeholderMsgEl.style.display = "inline";
+            if (originalTextSub) originalTextSub.style.display = "none";
+        }
+    }
+
+    async function translateAndDisplay(englishText) {
+        if (!englishText || !englishText.trim()) {
+            translatedDisplayText = "";
+            renderDisplayBox("", "");
+            return;
+        }
+
+        if (selectedLanguage === "en") {
+            translatedDisplayText = englishText;
+            renderDisplayBox(englishText, "");
+            return;
+        }
+
+        const trimmed = englishText.trim();
+        const cacheKey = `${selectedLanguage}::${trimmed}`;
+
+        if (translationCache[cacheKey]) {
+            translatedDisplayText = translationCache[cacheKey];
+            renderDisplayBox(translatedDisplayText, englishText);
+            return;
+        }
+
+        clearTimeout(translateDebounceTimer);
+        translateDebounceTimer = setTimeout(async () => {
+            try {
+                const res = await fetch("/api/translate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        text: trimmed,
+                        target_lang: selectedLanguage
+                    })
+                });
+                const data = await res.json();
+                if (data && data.translated) {
+                    translationCache[cacheKey] = data.translated;
+                    if (rawEnglishText.trim() === trimmed) {
+                        translatedDisplayText = data.translated;
+                        renderDisplayBox(data.translated, englishText);
+                    }
+                }
+            } catch (err) {
+                console.error("Translation request failed:", err);
+                translatedDisplayText = englishText;
+                renderDisplayBox(englishText, "");
+            }
+        }, 120);
+    }
+
     function updateFullText(fullText) {
         const text = fullText !== undefined && fullText !== null ? fullText : "";
+        rawEnglishText = text;
         currentFullText = text;
 
-        // If text hasn't changed, skip DOM write to keep cursor blinking smoothly
-        if (text === lastRenderedFullText) return;
-        lastRenderedFullText = text;
-
-        if (textContentEl && placeholderMsgEl) {
-            if (text !== "") {
-                placeholderMsgEl.style.display = "none";
-                textContentEl.textContent = text;
-            } else {
-                textContentEl.textContent = "";
-                placeholderMsgEl.style.display = "inline";
-            }
-        } else if (fullTextDisplay) {
-            if (text !== "") {
-                fullTextDisplay.innerHTML = `${escapeHtml(text)}<span class="blinking-cursor">|</span>`;
-            } else {
-                fullTextDisplay.innerHTML = `
-                    <span class="blinking-cursor">|</span><span class="placeholder-text">Signed characters and words will appear here...</span>
-                `;
-            }
+        if (selectedLanguage === "en") {
+            translatedDisplayText = text;
+            if (text === lastRenderedFullText) return;
+            lastRenderedFullText = text;
+            renderDisplayBox(text, "");
+        } else {
+            translateAndDisplay(text);
         }
     }
 
@@ -336,9 +421,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         suggestionsContainer.innerHTML = newSuggestions.map(word => `
-            <button type="button" class="sugg-chip" data-word="${escapeHtml(word)}">
-                <i class="fa-solid fa-arrow-turn-down" style="font-size:0.7rem; opacity:0.6; margin-right:4px;"></i>${escapeHtml(word)}
-            </button>
+            <button type="button" class="sugg-chip" data-word="${escapeHtml(word)}">${escapeHtml(word)}</button>
         `).join("");
     }
 
@@ -427,11 +510,43 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // Language Dropdown Selector change handler
+    if (languageSelect) {
+        languageSelect.addEventListener("change", () => {
+            selectedLanguage = languageSelect.value;
+
+            // Stop any ongoing audio/speech
+            if (currentTtsAudio) {
+                currentTtsAudio.pause();
+                currentTtsAudio = null;
+            }
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            if (btnSpeakText) btnSpeakText.classList.remove("speaking");
+
+            lastRenderedFullText = null;
+            if (selectedLanguage === "en") {
+                translatedDisplayText = rawEnglishText;
+                renderDisplayBox(rawEnglishText, "");
+            } else {
+                translateAndDisplay(rawEnglishText);
+            }
+        });
+    }
+
     if (btnClearText) {
         btnClearText.addEventListener("click", async () => {
             try {
+                if (currentTtsAudio) {
+                    currentTtsAudio.pause();
+                    currentTtsAudio = null;
+                }
+                if (window.speechSynthesis) window.speechSynthesis.cancel();
+                if (btnSpeakText) btnSpeakText.classList.remove("speaking");
+
                 lastRenderedFullText = null;
                 lastRenderedSuggestions = null;
+                rawEnglishText = "";
+                translatedDisplayText = "";
                 updateFullText("");
                 renderSuggestions([]);
                 await fetch("/api/clear_text", { method: "POST" });
@@ -443,8 +558,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (btnCopyText) {
         btnCopyText.addEventListener("click", () => {
-            if (!currentFullText) return;
-            navigator.clipboard.writeText(currentFullText).then(() => {
+            const textToCopy = (selectedLanguage !== "en" && translatedDisplayText) ? translatedDisplayText : currentFullText;
+            if (!textToCopy) return;
+            navigator.clipboard.writeText(textToCopy).then(() => {
                 const originalHtml = btnCopyText.innerHTML;
                 btnCopyText.innerHTML = '<i class="fa-solid fa-check" style="color:#10b981;"></i>';
                 setTimeout(() => { btnCopyText.innerHTML = originalHtml; }, 1500);
@@ -452,28 +568,82 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    function speakText(text) {
-        if (!text || !window.speechSynthesis) return;
-        window.speechSynthesis.cancel();
+    // High-fidelity Multi-Language Voice Playback
+    function speakText(text, lang) {
+        if (!text || !text.trim()) return;
+        const targetLang = lang || selectedLanguage || "en";
+        const voiceCode = LANG_VOICE_MAP[targetLang] || "en-IN";
+
+        if (btnSpeakText) btnSpeakText.classList.add("speaking");
+
+        if (currentTtsAudio) {
+            currentTtsAudio.pause();
+            currentTtsAudio = null;
+        }
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+        // 1. Try server-streamed natural native pronunciation
+        const ttsUrl = `/api/tts?text=${encodeURIComponent(text.trim())}&lang=${encodeURIComponent(targetLang)}`;
+        currentTtsAudio = new Audio(ttsUrl);
+
+        currentTtsAudio.onended = () => {
+            if (btnSpeakText) btnSpeakText.classList.remove("speaking");
+            currentTtsAudio = null;
+        };
+
+        currentTtsAudio.onerror = () => {
+            speakViaWebSpeech(text, voiceCode);
+        };
+
+        currentTtsAudio.play().catch(() => {
+            speakViaWebSpeech(text, voiceCode);
+        });
+    }
+
+    function speakViaWebSpeech(text, voiceCode) {
+        if (!window.speechSynthesis) {
+            if (btnSpeakText) btnSpeakText.classList.remove("speaking");
+            return;
+        }
+
         const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = voiceCode;
         utterance.rate = 0.95;
+
+        const voices = window.speechSynthesis.getVoices();
+        const baseLang = voiceCode.split("-")[0].toLowerCase();
+        const matched = voices.find(v => v.lang.toLowerCase().startsWith(baseLang));
+        if (matched) utterance.voice = matched;
+
+        utterance.onend = () => {
+            if (btnSpeakText) btnSpeakText.classList.remove("speaking");
+        };
+        utterance.onerror = () => {
+            if (btnSpeakText) btnSpeakText.classList.remove("speaking");
+        };
+
         window.speechSynthesis.speak(utterance);
     }
 
     if (btnSpeakText) {
-        btnSpeakText.addEventListener("click", () => speakText(currentFullText));
+        btnSpeakText.addEventListener("click", () => {
+            const textToSpeak = (selectedLanguage !== "en" && translatedDisplayText) ? translatedDisplayText : (rawEnglishText || currentFullText);
+            speakText(textToSpeak, selectedLanguage);
+        });
     }
 
     // ==========================================
-    // 4. TAB 2: TEXT TO ISL (ANIMATION SEQUENCE ONLY)
+    // 4. TAB 2: TEXT TO ISL (STATIC VS ANIMATION)
     // ==========================================
     const text2islInput = document.getElementById("text2isl-input");
     const btnTranslateText = document.getElementById("btn-translate-text");
     const spotlightImg = document.getElementById("spotlight-img");
     const spotlightLetter = document.getElementById("spotlight-letter");
-    const animSpeedSelect = document.getElementById("anim-speed");
+    const stageStepCounter = document.getElementById("stage-step-counter");
+    const playbackControlsGroup = document.getElementById("playback-controls-group");
 
     const btnPrevSign = document.getElementById("btn-prev-sign");
+    const btnPlaySign = document.getElementById("btn-play-sign");
     const btnPauseSign = document.getElementById("btn-pause-sign");
     const btnNextSign = document.getElementById("btn-next-sign");
 
@@ -485,29 +655,62 @@ document.addEventListener("DOMContentLoaded", () => {
     function generateISLSequence() {
         if (!text2islInput) return;
         const rawText = text2islInput.value.trim().toUpperCase();
-        currentSignSequence = [];
-
         if (!rawText) return;
 
-        // Check full phrase match
+        // Stop any running animation
+        pauseAnimation();
+        currentSignSequence = [];
+
+        // 1. Single static gesture if word is in 43 RECOGNIZED_WORDS
         if (RECOGNIZED_WORDS.includes(rawText)) {
-            currentSignSequence.push(rawText);
-        } else {
-            const words = rawText.split(/\s+/);
-            words.forEach(word => {
-                if (RECOGNIZED_WORDS.includes(word)) {
-                    currentSignSequence.push(word);
-                } else {
-                    for (let ch of word) {
-                        if (ch >= 'A' && ch <= 'Z') {
-                            currentSignSequence.push(ch);
-                        }
-                    }
-                }
-            });
+            currentSignSequence = [rawText];
+            displayStaticSign(rawText, "word");
+            return;
         }
 
+        // 2. Single static gesture if a single alphabet
+        if (rawText.length === 1 && rawText >= 'A' && rawText <= 'Z') {
+            currentSignSequence = [rawText];
+            displayStaticSign(rawText, "alphabet");
+            return;
+        }
+
+        // 3. Animation sequence: Word not in 43 words (fingerspelling letter-by-letter)
+        const words = rawText.split(/\s+/);
+        words.forEach(word => {
+            if (RECOGNIZED_WORDS.includes(word)) {
+                currentSignSequence.push(word);
+            } else {
+                for (let ch of word) {
+                    if (ch >= 'A' && ch <= 'Z') {
+                        currentSignSequence.push(ch);
+                    }
+                }
+            }
+        });
+
         if (currentSignSequence.length === 0) return;
+
+        if (currentSignSequence.length === 1) {
+            displayStaticSign(currentSignSequence[0], "word");
+        } else {
+            displayAnimationSequence();
+        }
+    }
+
+    function displayStaticSign(signName, type) {
+        // Hide playback controls completely for static gestures
+        if (playbackControlsGroup) playbackControlsGroup.style.display = "none";
+        if (stageStepCounter) stageStepCounter.style.display = "none";
+
+        if (spotlightImg) spotlightImg.src = getSignImagePath(signName);
+        if (spotlightLetter) spotlightLetter.innerText = signName;
+    }
+
+    function displayAnimationSequence() {
+        // Show controls ONLY for animation sequences
+        if (playbackControlsGroup) playbackControlsGroup.style.display = "flex";
+        if (stageStepCounter) stageStepCounter.style.display = "inline-flex";
 
         setActiveSign(0);
         startAnimation();
@@ -520,15 +723,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (spotlightImg) spotlightImg.src = getSignImagePath(sign);
         if (spotlightLetter) spotlightLetter.innerText = sign;
+
+        if (stageStepCounter) {
+            stageStepCounter.innerText = `Sign ${activeSignIndex + 1} of ${currentSignSequence.length}`;
+        }
     }
 
     function startAnimation() {
         isPlayingAnimation = true;
+        if (btnPlaySign) {
+            btnPlaySign.classList.remove("btn-secondary");
+            btnPlaySign.classList.add("btn-primary");
+        }
         if (btnPauseSign) {
-            btnPauseSign.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
+            btnPauseSign.classList.remove("btn-primary");
+            btnPauseSign.classList.add("btn-secondary");
         }
 
-        const speed = animSpeedSelect ? parseInt(animSpeedSelect.value, 10) : 1000;
         if (animationTimer) clearInterval(animationTimer);
 
         animationTimer = setInterval(() => {
@@ -537,14 +748,19 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
                 pauseAnimation();
             }
-        }, speed);
+        }, 900);
     }
 
     function pauseAnimation() {
         isPlayingAnimation = false;
         if (animationTimer) clearInterval(animationTimer);
+        if (btnPlaySign) {
+            btnPlaySign.classList.remove("btn-primary");
+            btnPlaySign.classList.add("btn-secondary");
+        }
         if (btnPauseSign) {
-            btnPauseSign.innerHTML = '<i class="fa-solid fa-play"></i> Play';
+            btnPauseSign.classList.remove("btn-secondary");
+            btnPauseSign.classList.add("btn-primary");
         }
     }
 
@@ -558,11 +774,17 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    if (btnPauseSign) {
-        btnPauseSign.addEventListener("click", () => {
-            if (isPlayingAnimation) pauseAnimation();
-            else startAnimation();
+    if (btnPlaySign) {
+        btnPlaySign.addEventListener("click", () => {
+            if (activeSignIndex >= currentSignSequence.length - 1) {
+                setActiveSign(0);
+            }
+            startAnimation();
         });
+    }
+
+    if (btnPauseSign) {
+        btnPauseSign.addEventListener("click", pauseAnimation);
     }
 
     if (btnPrevSign) {
@@ -603,8 +825,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const filteredWords = RECOGNIZED_WORDS.filter(w => !q || w.includes(q));
             filteredWords.forEach(word => {
                 const card = document.createElement("div");
-                card.className = "vocab-item-card";
-                card.innerHTML = `<span>${word}</span>`;
+                card.className = "vocab-item-card word-card";
+                card.innerHTML = `<span>${escapeHtml(word)}</span>`;
+                card.title = `Click to view static sign for "${word}"`;
                 card.addEventListener("click", () => {
                     activateTab("tab-text2isl");
                     if (text2islInput) {
@@ -621,8 +844,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const filteredAlphas = ALPHABETS.filter(a => !q || a.includes(q));
             filteredAlphas.forEach(letter => {
                 const card = document.createElement("div");
-                card.className = "vocab-item-card";
-                card.innerHTML = `<span style="font-size:1.15rem; color:#2563eb;">${letter}</span>`;
+                card.className = "vocab-item-card alpha-card";
+                card.innerHTML = `<span>${escapeHtml(letter)}</span>`;
+                card.title = `Click to view sign for letter "${letter}"`;
                 card.addEventListener("click", () => {
                     activateTab("tab-text2isl");
                     if (text2islInput) {

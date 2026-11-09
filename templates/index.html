@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Indian Sign Language (ISL) Platform</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=6.0">
+    <link rel="stylesheet" href="/static/css/style.css?v=13.0">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -175,6 +175,23 @@
                     <div class="output-header">
                         <h2>Translated Text</h2>
                         <div class="output-actions">
+                            <div class="lang-selector-box" title="Select display & speech language">
+                                <i class="fa-solid fa-language lang-icon"></i>
+                                <select id="language-select" class="lang-dropdown">
+                                    <option value="en" selected>English</option>
+                                    <option value="hi">हिंदी (Hindi)</option>
+                                    <option value="te">తెలుగు (Telugu)</option>
+                                    <option value="ta">தமிழ் (Tamil)</option>
+                                    <option value="kn">ಕನ್ನಡ (Kannada)</option>
+                                    <option value="ml">മലയാളം (Malayalam)</option>
+                                    <option value="mr">मराठी (Marathi)</option>
+                                    <option value="bn">বাংলা (Bengali)</option>
+                                    <option value="gu">ગુજરાતી (Gujarati)</option>
+                                    <option value="es">Español (Spanish)</option>
+                                    <option value="fr">Français (French)</option>
+                                    <option value="de">Deutsch (German)</option>
+                                </select>
+                            </div>
                             <button id="btn-speak-text" class="btn-action-icon" title="Read text aloud">
                                 <i class="fa-solid fa-volume-high"></i>
                             </button>
@@ -189,17 +206,14 @@
 
                     <!-- Single Unified Text Box -->
                     <div class="unified-text-box">
-                        <div id="full-text-display" class="full-text-display">
-                            <span id="text-content"></span><span class="blinking-cursor">|</span><span class="placeholder-text" id="placeholder-msg">Signed characters and words will appear here...</span>
-                        </div>
+                        <div id="full-text-display" class="full-text-display"><span id="text-content"></span><span class="blinking-cursor">|</span><span class="placeholder-text" id="placeholder-msg">Signed characters and words will appear here...</span></div>
+                        <div id="original-text-sub" class="original-text-sub" style="display: none;"></div>
                     </div>
 
                     <!-- Nearest Matching Word Suggestions (Visible ONLY in Alphabets Mode) -->
                     <div id="suggestions-wrapper" class="suggestions-wrapper">
                         <div class="suggestions-heading">
-                            <i class="fa-solid fa-wand-magic-sparkles"></i>
                             <span>Nearest Word Suggestions</span>
-                            <small>(Click any word to insert)</small>
                         </div>
                         <div id="suggestions-container" class="suggestions-chips">
                             <span class="hint">Spell letters to see instant word suggestions...</span>
@@ -221,28 +235,21 @@
                     </button>
                 </div>
 
-                <!-- ANIMATION SEQUENCE PLAYER (Compact, elegant, no images under it) -->
+                <!-- ANIMATION SEQUENCE / STATIC SIGN PLAYER -->
                 <div class="animation-stage">
                     <div class="stage-image-card">
-                        <img id="spotlight-img" src="/static/signs/real_alphabets/H.jpg" alt="Real Sign Photo">
+                        <img id="spotlight-img" src="/static/signs/real_phrases/UNDERSTAND.png" alt="Real Sign Photo">
                     </div>
                     <div class="stage-controls-side">
-                        <span class="stage-tag">Current Sign</span>
-                        <h2 id="spotlight-letter">H</h2>
+                        <h2 id="spotlight-letter">UNDERSTAND</h2>
+                        <div id="stage-step-counter" class="stage-step-counter" style="display: none;"></div>
                         
-                        <div class="playback-controls-group">
-                            <button id="btn-prev-sign" class="btn btn-sm btn-secondary"><i class="fa-solid fa-backward"></i> Prev</button>
-                            <button id="btn-pause-sign" class="btn btn-sm btn-primary"><i class="fa-solid fa-play"></i> Play</button>
-                            <button id="btn-next-sign" class="btn btn-sm btn-secondary"><i class="fa-solid fa-forward"></i> Next</button>
-                        </div>
-                        
-                        <div class="speed-control-row">
-                            <label for="anim-speed">Speed:</label>
-                            <select id="anim-speed" class="select-clean">
-                                <option value="1500">Slow (1.5s)</option>
-                                <option value="1000" selected>Normal (1.0s)</option>
-                                <option value="600">Fast (0.6s)</option>
-                            </select>
+                        <!-- Playback controls: visible ONLY for animation sequences (words not in 43 list) -->
+                        <div id="playback-controls-group" class="playback-controls-group" style="display: none;">
+                            <button id="btn-prev-sign" class="btn btn-sm btn-secondary" title="Previous Sign"><i class="fa-solid fa-backward"></i> Prev</button>
+                            <button id="btn-play-sign" class="btn btn-sm btn-primary" title="Play Animation"><i class="fa-solid fa-play"></i> Play</button>
+                            <button id="btn-pause-sign" class="btn btn-sm btn-secondary" title="Pause Animation"><i class="fa-solid fa-pause"></i> Pause</button>
+                            <button id="btn-next-sign" class="btn btn-sm btn-secondary" title="Next Sign"><i class="fa-solid fa-forward"></i> Next</button>
                         </div>
                     </div>
                 </div>
@@ -250,7 +257,7 @@
         </section>
 
         <!-- ========================================== -->
-        <!-- TAB 3: RECOGNIZABLE WORDS (REPLACES GUIDE) -->
+        <!-- TAB 3: RECOGNIZABLE WORDS VOCABULARY       -->
         <!-- ========================================== -->
         <section id="tab-vocabulary" class="tab-panel">
             <div class="card">
@@ -259,19 +266,26 @@
                 </div>
 
                 <div class="vocab-filter-row">
-                    <input type="text" id="vocab-search-input" placeholder="Search words or letters (e.g. MORNING, HELP, A)..." class="vocab-search-box">
+                    <div class="vocab-search-wrap">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="vocab-search-input" placeholder="Search words or letters (e.g. UNDERSTAND, PLEASE, J)..." class="vocab-search-box">
+                    </div>
                 </div>
 
                 <div class="vocab-section-block">
-                    <h3 class="vocab-section-title"><i class="fa-solid fa-comments"></i> 43 Full Words & Phrases</h3>
-                    <div id="vocab-words-grid" class="vocab-card-grid">
+                    <div class="vocab-section-header">
+                        <h3 class="vocab-section-title"><i class="fa-solid fa-comments"></i> 43 Full Words & Phrases</h3>
+                    </div>
+                    <div id="vocab-words-grid" class="vocab-card-grid vocab-words-grid">
                         <!-- Populated dynamically via JS -->
                     </div>
                 </div>
 
                 <div class="vocab-section-block mt-4">
-                    <h3 class="vocab-section-title"><i class="fa-solid fa-font"></i> 26 Alphabets (A to Z)</h3>
-                    <div id="vocab-alphabets-grid" class="vocab-card-grid">
+                    <div class="vocab-section-header">
+                        <h3 class="vocab-section-title"><i class="fa-solid fa-font"></i> 26 Alphabets (A to Z)</h3>
+                    </div>
+                    <div id="vocab-alphabets-grid" class="vocab-card-grid vocab-alphabets-grid">
                         <!-- Populated dynamically via JS -->
                     </div>
                 </div>
@@ -333,6 +347,6 @@
     </main>
 
     <canvas id="hidden-canvas" style="display: none;"></canvas>
-    <script src="/static/js/app.js?v=6.0"></script>
+    <script src="/static/js/app.js?v=13.0"></script>
 </body>
 </html>

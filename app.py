@@ -10,14 +10,16 @@ from flask import Flask, render_template, request, jsonify
 
 from isl_engine import ISLLandmarkExtractor
 from word_suggester import WordSuggester
+from translator import LanguageTranslator, SUPPORTED_LANGUAGES
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 
 # Initialize Landmark Extractor
 extractor = ISLLandmarkExtractor(min_detection_confidence=0.45, min_tracking_confidence=0.4)
 
-# Initialize Word Suggester
+# Initialize Word Suggester & Language Translator
 suggester = WordSuggester()
+translator = LanguageTranslator()
 
 # Paths to Dual Models & General Model
 ALPHABETS_MODEL_PATH = "models/isl_alphabets_model.pkl"
@@ -242,6 +244,36 @@ def get_suggestions():
     suggestions = suggester.suggest(query)
     return jsonify({"query": query, "suggestions": suggestions})
 
+@app.route("/api/languages", methods=["GET"])
+def get_languages():
+    return jsonify({"languages": SUPPORTED_LANGUAGES})
+
+@app.route("/api/translate", methods=["POST"])
+def translate_api():
+    data = request.get_json(force=True)
+    text = data.get("text", "").strip()
+    target_lang = data.get("target_lang", "en").strip().lower()
+    translated = translator.translate(text, target_lang)
+    voice_code = SUPPORTED_LANGUAGES.get(target_lang, {}).get("voice_code", "en-IN")
+    return jsonify({
+        "original": text,
+        "translated": translated,
+        "target_lang": target_lang,
+        "voice_code": voice_code
+    })
+
+@app.route("/api/tts", methods=["GET"])
+def tts_api():
+    text = request.args.get("text", "").strip()
+    lang = request.args.get("lang", "en").strip().lower()
+    if not text:
+        return "Missing text", 400
+    
+    audio_bytes = translator.get_tts_audio(text, lang)
+    if audio_bytes:
+        return audio_bytes, 200, {"Content-Type": "audio/mpeg"}
+    return "TTS unavailable", 500
+
 @app.route("/api/metrics", methods=["GET"])
 def get_metrics():
     mode = request.args.get("mode", ACTIVE_MODE).strip().lower()
@@ -273,5 +305,6 @@ def get_signs_list():
     return jsonify({"signs": signs, "mode": mode})
 
 if __name__ == "__main__":
-    print("Starting Indian Sign Language Web Platform on http://127.0.0.1:5000")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"Starting Indian Sign Language Web Platform on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=False)
