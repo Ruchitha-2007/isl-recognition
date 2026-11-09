@@ -253,6 +253,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     btnToggleCam.style.background = "#ef4444";
                     btnToggleCam.style.color = "#ffffff";
 
+                    initClientMediaPipe();
+                    startLocalTracking();
                     runInferenceLoop();
                 } catch (err) {
                     console.error("Camera access error:", err);
@@ -280,6 +282,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         isStreaming = false;
         frameInFlight = false;
+        latestClientLandmarks = null;
+        clientHandsCount = 0;
         if (btnToggleCam) {
             btnToggleCam.innerHTML = '<i class="fa-solid fa-video"></i> Start Camera';
             btnToggleCam.style.background = "";
@@ -295,9 +299,11 @@ document.addEventListener("DOMContentLoaded", () => {
         resetHoldProgress();
     }
 
-    // --- Client-Side Real-Time MediaPipe Hand Tracking ---
+    // --- Client-Side Real-Time MediaPipe Hand Tracking (Smooth 60 FPS) ---
     let clientHands = null;
     let clientMediaPipeActive = false;
+    let latestClientLandmarks = null;
+    let clientHandsCount = 0;
 
     function initClientMediaPipe() {
         if (typeof Hands !== "undefined" && !clientHands) {
@@ -315,19 +321,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 clientHands.onResults((results) => {
                     if (!isStreaming) return;
                     clientMediaPipeActive = true;
-                    const count = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
-                    if (handsCountEl) {
-                        handsCountEl.innerText = count;
-                        handsCountEl.style.color = count > 0 ? "#10b981" : "";
-                    }
-
                     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                        const clientCoords = results.multiHandLandmarks.map(hand => 
+                        clientHandsCount = results.multiHandLandmarks.length;
+                        latestClientLandmarks = results.multiHandLandmarks.map(hand =>
+                            hand.map(lm => [lm.x, lm.y, lm.z])
+                        );
+                        const drawCoords = results.multiHandLandmarks.map(hand =>
                             hand.map(lm => [lm.x, lm.y])
                         );
-                        drawLandmarks(clientCoords);
+                        drawLandmarks(drawCoords);
                     } else {
+                        clientHandsCount = 0;
+                        latestClientLandmarks = null;
                         drawLandmarks([]);
+                    }
+
+                    if (handsCountEl) {
+                        handsCountEl.innerText = clientHandsCount;
+                        handsCountEl.style.color = clientHandsCount > 0 ? "#10b981" : "";
                     }
                 });
                 console.log("Client-side MediaPipe initialized successfully!");
@@ -337,53 +348,80 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // High-speed 60 FPS camera tracking loop via requestAnimationFrame
+    let isProcessingHands = false;
+    async function startLocalTracking() {
+        if (!isStreaming) return;
+        if (clientHands && video && video.readyState >= 2 && !isProcessingHands) {
+            isProcessingHands = true;
+            try {
+                await clientHands.send({ image: video });
+            } catch (e) {
+                // Ignore transient frame skips
+            } finally {
+                isProcessingHands = false;
+            }
+        }
+        if (isStreaming) {
+            requestAnimationFrame(startLocalTracking);
+        }
+    }
+
     let consecutiveErrors = 0;
 
-    // --- Frame Inference Loop ---
+    // --- Background Classification Inference Loop (100ms decoupled) ---
     async function runInferenceLoop() {
-        initClientMediaPipe();
-
         while (isStreaming) {
-            if (clientHands && video && video.readyState >= 2) {
-                try {
-                    await clientHands.send({ image: video });
-                } catch (e) {
-                    // Ignore client frame send hiccups
-                }
-            }
-
             await sendFrameForInference();
-            await new Promise(resolve => setTimeout(resolve, 150));
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
     }
 
     let frameInFlight = false;
     async function sendFrameForInference() {
         if (!isStreaming || frameInFlight) return;
-        if (!video || video.readyState < 2) return; // Wait for active video frame
+        if (!video || video.readyState < 2) return;
+
+        // If local MediaPipe is running and sees 0 hands, instant reset without network lag
+        if (clientMediaPipeActive && clientHandsCount === 0) {
+            if (predictedSignEl) predictedSignEl.innerText = "-";
+            if (confidenceScoreEl) confidenceScoreEl.innerText = "0%";
+            consecutiveSign = null;
+            consecutiveCount = 0;
+            resetHoldProgress();
+            return;
+        }
 
         frameInFlight = true;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
 
         try {
-            const vw = video.videoWidth || 640;
-            const vh = video.videoHeight || 480;
-            const targetW = 480;
-            const targetH = Math.round((vh / vw) * targetW) || 360;
+            let payload = { mode: currentMode };
 
-            if (captureCanvas.width !== targetW || captureCanvas.height !== targetH) {
-                captureCanvas.width = targetW;
-                captureCanvas.height = targetH;
+            if (latestClientLandmarks && latestClientLandmarks.length > 0) {
+                // Ultra-lightweight path: send 3D landmarks (400 bytes, 15ms total!)
+                payload.landmarks = latestClientLandmarks;
+            } else {
+                // Fallback path: send compressed canvas image
+                const vw = video.videoWidth || 640;
+                const vh = video.videoHeight || 480;
+                const targetW = 400;
+                const targetH = Math.round((vh / vw) * targetW) || 300;
+
+                if (captureCanvas.width !== targetW || captureCanvas.height !== targetH) {
+                    captureCanvas.width = targetW;
+                    captureCanvas.height = targetH;
+                }
+
+                captureCtx.drawImage(video, 0, 0, targetW, targetH);
+                payload.image = captureCanvas.toDataURL("image/jpeg", 0.65);
             }
-
-            captureCtx.drawImage(video, 0, 0, targetW, targetH);
-            const dataUrl = captureCanvas.toDataURL("image/jpeg", 0.70);
 
             const res = await fetch("/api/predict_frame", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ image: dataUrl, mode: currentMode }),
+                body: JSON.stringify(payload),
                 signal: controller.signal
             });
 

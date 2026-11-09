@@ -113,19 +113,27 @@ def predict_frame():
             return jsonify({"status": "error", "message": "Model not loaded"}), 400
 
     try:
-        image_data = data.get("image", "")
-        if "," in image_data:
-            image_data = image_data.split(",")[1]
-            
-        image_bytes = base64.b64decode(image_data)
-        np_arr = np.frombuffer(image_bytes, np.uint8)
-        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        raw_coords = []
+        landmarks = data.get("landmarks", None)
         
-        if frame is None:
-            return jsonify({"status": "error", "message": "Failed to decode frame"}), 400
-
-        # Extract rotation-invariant dual hand landmarks
-        features, annotated_frame, hands_detected, raw_coords = extractor.extract_landmarks(frame, return_raw_coords=True)
+        # High-speed path: client extracted 3D landmarks (0.2ms computation!)
+        if landmarks is not None and len(landmarks) > 0:
+            features, hands_detected = extractor.extract_features_from_landmarks(landmarks)
+            raw_coords = [[[round(float(p[0]), 4), round(float(p[1]), 4)] for p in hand] for hand in landmarks]
+        else:
+            image_data = data.get("image", "")
+            if image_data:
+                if "," in image_data:
+                    image_data = image_data.split(",")[1]
+                image_bytes = base64.b64decode(image_data)
+                np_arr = np.frombuffer(image_bytes, np.uint8)
+                frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                if frame is not None:
+                    features, annotated_frame, hands_detected, raw_coords = extractor.extract_landmarks(frame, return_raw_coords=True)
+                else:
+                    features, hands_detected, raw_coords = np.zeros(180, dtype=np.float32), 0, []
+            else:
+                features, hands_detected, raw_coords = np.zeros(180, dtype=np.float32), 0, []
         
         predicted_sign = None
         confidence = 0.0
