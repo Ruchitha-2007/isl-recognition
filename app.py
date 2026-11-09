@@ -15,7 +15,7 @@ from translator import LanguageTranslator, SUPPORTED_LANGUAGES
 app = Flask(__name__, static_folder="static", template_folder="templates")
 
 # Initialize Landmark Extractor
-extractor = ISLLandmarkExtractor(min_detection_confidence=0.45, min_tracking_confidence=0.4)
+extractor = ISLLandmarkExtractor(static_image_mode=True, min_detection_confidence=0.35, min_tracking_confidence=0.3)
 
 # Initialize Word Suggester & Language Translator
 suggester = WordSuggester()
@@ -146,9 +146,12 @@ def predict_frame():
             counts = {p: preds.count(p) for p in set(preds)}
             most_frequent = max(counts, key=counts.get)
             
-            # Responsive threshold (3 out of 5 frames, confidence >= 0.25)
-            if counts[most_frequent] >= 3 and raw_confidence >= 0.25:
+            # Responsive threshold (2 out of 4 frames, or instant if confident >= 0.22)
+            if counts[most_frequent] >= 2 or raw_confidence >= 0.22:
                 predicted_sign = most_frequent
+                confidence = raw_confidence
+            else:
+                predicted_sign = raw_pred
                 confidence = raw_confidence
         else:
             PREDICTION_HISTORY.clear()

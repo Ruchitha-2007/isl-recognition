@@ -41,7 +41,7 @@ class ISLLandmarkExtractor:
     Hands are sorted deterministically from Left-to-Right by their X position,
     avoiding MediaPipe left/right label flipping bugs on webcams.
     """
-    def __init__(self, static_image_mode=False, max_num_hands=2, min_detection_confidence=0.5, min_tracking_confidence=0.4):
+    def __init__(self, static_image_mode=True, max_num_hands=2, min_detection_confidence=0.35, min_tracking_confidence=0.3):
         self.mp_hands = mp_hands
         self.mp_draw = mp_draw
         self.mp_drawing_styles = mp_drawing_styles

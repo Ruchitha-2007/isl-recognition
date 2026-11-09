@@ -90,8 +90,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const holdProgressBar = document.getElementById("hold-progress-bar");
     const holdProgressFill = document.getElementById("hold-progress-fill");
 
-    const hiddenCanvas = document.getElementById("hidden-canvas");
-    const canvasCtx = hiddenCanvas.getContext("2d");
+    // Dedicated in-memory capture canvas (independent of DOM/CSS styling)
+    const captureCanvas = document.createElement("canvas");
+    const captureCtx = captureCanvas.getContext("2d", { willReadFrequently: true });
 
     let isStreaming = false;
     let streamInterval = null;
@@ -247,9 +248,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (overlayCanvas) overlayCanvas.style.display = "block";
                     if (videoPlaceholder) videoPlaceholder.style.display = "none";
 
-                    hiddenCanvas.width = 480;
-                    hiddenCanvas.height = 360;
-
                     isStreaming = true;
                     btnToggleCam.innerHTML = '<i class="fa-solid fa-power-off"></i> Stop Camera';
                     btnToggleCam.style.background = "#ef4444";
@@ -290,7 +288,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (videoPlaceholder) videoPlaceholder.style.display = "flex";
         if (predictedSignEl) predictedSignEl.innerText = "-";
         if (confidenceScoreEl) confidenceScoreEl.innerText = "0%";
-        if (handsCountEl) handsCountEl.innerText = "0";
+        if (handsCountEl) {
+            handsCountEl.innerText = "0";
+            handsCountEl.style.color = "";
+        }
         resetHoldProgress();
     }
 
@@ -305,8 +306,18 @@ document.addEventListener("DOMContentLoaded", () => {
         const timeoutId = setTimeout(() => controller.abort(), 3500);
 
         try {
-            canvasCtx.drawImage(video, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
-            const dataUrl = hiddenCanvas.toDataURL("image/jpeg", 0.55);
+            const vw = video.videoWidth || 640;
+            const vh = video.videoHeight || 480;
+            const targetW = 480;
+            const targetH = Math.round((vh / vw) * targetW) || 360;
+
+            if (captureCanvas.width !== targetW || captureCanvas.height !== targetH) {
+                captureCanvas.width = targetW;
+                captureCanvas.height = targetH;
+            }
+
+            captureCtx.drawImage(video, 0, 0, targetW, targetH);
+            const dataUrl = captureCanvas.toDataURL("image/jpeg", 0.70);
 
             const res = await fetch("/api/predict_frame", {
                 method: "POST",
@@ -323,7 +334,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const data = await res.json();
             if (data.status === "success") {
-                if (handsCountEl) handsCountEl.innerText = data.hands_detected;
+                if (handsCountEl) {
+                    handsCountEl.innerText = data.hands_detected;
+                    handsCountEl.style.color = data.hands_detected > 0 ? "#10b981" : "";
+                }
 
                 if (data.landmarks && data.landmarks.length > 0) {
                     drawLandmarks(data.landmarks);
