@@ -253,7 +253,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     btnToggleCam.style.background = "#ef4444";
                     btnToggleCam.style.color = "#ffffff";
 
-                    streamInterval = setInterval(sendFrameForInference, 180);
+                    runInferenceLoop();
                 } catch (err) {
                     console.error("Camera access error:", err);
                     alert("Could not access webcam. Please check camera permissions in your browser.");
@@ -295,7 +295,14 @@ document.addEventListener("DOMContentLoaded", () => {
         resetHoldProgress();
     }
 
-    // --- Frame Inference ---
+    // --- Frame Inference Loop ---
+    async function runInferenceLoop() {
+        while (isStreaming) {
+            await sendFrameForInference();
+            await new Promise(resolve => setTimeout(resolve, 150));
+        }
+    }
+
     let frameInFlight = false;
     async function sendFrameForInference() {
         if (!isStreaming || frameInFlight) return;

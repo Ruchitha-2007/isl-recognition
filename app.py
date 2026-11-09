@@ -63,13 +63,7 @@ def load_all_models():
         except Exception as e:
             print(f"Error loading words model: {e}")
             
-    # 3. Fallback Model
-    if os.path.exists(FALLBACK_MODEL_PATH) and os.path.exists(FALLBACK_ENCODER_PATH):
-        try:
-            model_fallback = joblib.load(FALLBACK_MODEL_PATH)
-            encoder_fallback = joblib.load(FALLBACK_ENCODER_PATH)
-        except Exception:
-            pass
+    # Dedicated Alphabets & Words models loaded successfully
 
 load_all_models()
 
@@ -104,14 +98,13 @@ def predict_frame():
         active_model = model_alphabets
         active_encoder = encoder_alphabets
     else:
-        # Fallback if specific model is still compiling
-        active_model = model_alphabets or model_words or model_fallback
-        active_encoder = encoder_alphabets or encoder_words or encoder_fallback
+        active_model = model_alphabets or model_words
+        active_encoder = encoder_alphabets or encoder_words
         
     if active_model is None or active_encoder is None:
         load_all_models()
-        active_model = model_alphabets or model_words or model_fallback
-        active_encoder = encoder_alphabets or encoder_words or encoder_fallback
+        active_model = model_alphabets or model_words
+        active_encoder = encoder_alphabets or encoder_words
         if active_model is None:
             return jsonify({"status": "error", "message": "Model not loaded"}), 400
 
