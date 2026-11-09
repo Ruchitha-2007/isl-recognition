@@ -1,6 +1,21 @@
 import cv2
-import mediapipe as mp
 import numpy as np
+
+# Robust cross-platform MediaPipe import (guaranteed to work across Linux/Render/Windows)
+try:
+    import mediapipe.python.solutions.hands as mp_hands
+    import mediapipe.python.solutions.drawing_utils as mp_draw
+    import mediapipe.python.solutions.drawing_styles as mp_drawing_styles
+except (ImportError, AttributeError):
+    try:
+        from mediapipe.solutions import hands as mp_hands
+        from mediapipe.solutions import drawing_utils as mp_draw
+        from mediapipe.solutions import drawing_styles as mp_drawing_styles
+    except (ImportError, AttributeError):
+        import mediapipe as mp
+        mp_hands = mp.solutions.hands
+        mp_draw = mp.solutions.drawing_utils
+        mp_drawing_styles = mp.solutions.drawing_styles
 
 def calculate_angle(p1, p2, p3):
     """Calculates angle (in degrees) at joint p2 formed by lines (p1-p2) and (p3-p2)."""
@@ -27,9 +42,9 @@ class ISLLandmarkExtractor:
     avoiding MediaPipe left/right label flipping bugs on webcams.
     """
     def __init__(self, static_image_mode=False, max_num_hands=2, min_detection_confidence=0.5, min_tracking_confidence=0.4):
-        self.mp_hands = mp.solutions.hands
-        self.mp_draw = mp.solutions.drawing_utils
-        self.mp_drawing_styles = mp.solutions.drawing_styles
+        self.mp_hands = mp_hands
+        self.mp_draw = mp_draw
+        self.mp_drawing_styles = mp_drawing_styles
         self.hands = self.mp_hands.Hands(
             static_image_mode=static_image_mode,
             max_num_hands=max_num_hands,
