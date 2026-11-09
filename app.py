@@ -128,7 +128,7 @@ def predict_frame():
             return jsonify({"status": "error", "message": "Failed to decode frame"}), 400
 
         # Extract rotation-invariant dual hand landmarks
-        features, annotated_frame, hands_detected = extractor.extract_landmarks(frame)
+        features, annotated_frame, hands_detected, raw_coords = extractor.extract_landmarks(frame, return_raw_coords=True)
         
         predicted_sign = None
         confidence = 0.0
@@ -153,10 +153,6 @@ def predict_frame():
         else:
             PREDICTION_HISTORY.clear()
             
-        # Base64 encode annotated frame
-        _, buffer = cv2.imencode(".jpg", annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-        annotated_b64 = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("utf-8")
-        
         payload = get_text_payload()
         
         return jsonify({
@@ -165,7 +161,8 @@ def predict_frame():
             "hands_detected": hands_detected,
             "predicted_sign": predicted_sign,
             "confidence": round(confidence * 100, 1) if predicted_sign else 0.0,
-            "annotated_image": annotated_b64,
+            "landmarks": raw_coords,
+            "annotated_image": "",
             "current_word": payload["current_word"],
             "sentence": payload["sentence"],
             "full_text": payload["full_text"],

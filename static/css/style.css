@@ -308,19 +308,24 @@ input:checked + .slider:before { transform: translateX(16px); }
 }
 
 #webcam {
-    display: none !important;
-    position: absolute !important;
-    width: 0 !important;
-    height: 0 !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-}
-
-#annotated-stream {
     width: 100%;
     height: 100%;
-    object-fit: contain;
-    display: block;
+    object-fit: cover;
+    border-radius: var(--radius-md);
+    transform: scaleX(-1); /* Mirror camera for natural feel */
+    display: none;
+}
+
+#overlay-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    transform: scaleX(-1); /* Match mirrored video */
+    display: none;
+    border-radius: var(--radius-md);
 }
 
 .video-placeholder {

@@ -132,8 +132,8 @@
                 <!-- Left: Camera Feed -->
                 <div class="card video-card">
                     <div class="video-container">
-                        <video id="webcam" autoplay playsinline muted style="display: none !important; position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;"></video>
-                        <img id="annotated-stream" alt="Live Hand Feed" src="" style="display: none;">
+                        <video id="webcam" autoplay playsinline muted></video>
+                        <canvas id="overlay-canvas"></canvas>
                         <div id="video-placeholder" class="video-placeholder">
                             <i class="fa-solid fa-camera"></i>
                             <p>Camera is currently idle</p>
@@ -347,6 +347,6 @@
     </main>
 
     <canvas id="hidden-canvas" style="display: none;"></canvas>
-    <script src="/static/js/app.js?v=13.0"></script>
+    <script src="/static/js/app.js?v=14.0"></script>
 </body>
 </html>

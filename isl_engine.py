@@ -95,18 +95,20 @@ class ISLLandmarkExtractor:
         # Vector: 63 coordinates + 15 angles + 10 distances = 88 features
         return np.concatenate([norm_coords.flatten(), angles, distances])
 
-    def extract_landmarks(self, frame_bgr):
+    def extract_landmarks(self, frame_bgr, return_raw_coords=False):
         """
         Processes frame and returns:
         - feature_vector: 1D numpy array of length 180 (2 hands * 88 + 4 two-hand interaction features)
         - annotated_frame: frame with drawn skeleton
         - hands_detected: int (0, 1, or 2)
+        - raw_coords (optional, if return_raw_coords=True): list of hand landmarks [[x, y], ...]
         """
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         results = self.hands.process(frame_rgb)
         
         annotated_frame = frame_bgr.copy()
         hands_detected = 0
+        raw_coords = []
         
         # Single hand length = 88 features
         hand1_features = np.zeros(88, dtype=np.float32)
@@ -129,6 +131,7 @@ class ISLLandmarkExtractor:
                 coords_3d = [[lm.x, lm.y, lm.z] for lm in hand_lms.landmark]
                 wrist_x = hand_lms.landmark[0].x
                 raw_hands.append((wrist_x, coords_3d))
+                raw_coords.append([[round(float(lm.x), 4), round(float(lm.y), 4)] for lm in hand_lms.landmark])
                 
             # Deterministic Sorting: Hand with smaller X (left in image) is Hand 1, other is Hand 2
             raw_hands.sort(key=lambda item: item[0])
@@ -152,6 +155,8 @@ class ISLLandmarkExtractor:
                 two_hand_interaction[3] = abs(h1_wrist[1] - h2_wrist[1])
 
         feature_vector = np.concatenate([hand1_features, hand2_features, two_hand_interaction])
+        if return_raw_coords:
+            return feature_vector, annotated_frame, hands_detected, raw_coords
         return feature_vector, annotated_frame, hands_detected
 
     def close(self):

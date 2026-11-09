@@ -65,7 +65,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // 3. TAB 1: SIGN TO TEXT (CAMERA & ML ENGINE)
     // ==========================================
     const video = document.getElementById("webcam");
-    const annotatedStream = document.getElementById("annotated-stream");
+    const overlayCanvas = document.getElementById("overlay-canvas");
+    const overlayCtx = overlayCanvas ? overlayCanvas.getContext("2d") : null;
     const videoPlaceholder = document.getElementById("video-placeholder");
     const btnToggleCam = document.getElementById("btn-toggle-cam");
     const btnClearText = document.getElementById("btn-clear-text");
@@ -172,28 +173,89 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // --- Hand Skeleton Landmarks Rendering ---
+    const HAND_CONNECTIONS = [
+        [0, 1], [1, 2], [2, 3], [3, 4],       // Thumb
+        [0, 5], [5, 6], [6, 7], [7, 8],       // Index
+        [5, 9], [9, 10], [10, 11], [11, 12],   // Middle
+        [9, 13], [13, 14], [14, 15], [15, 16], // Ring
+        [13, 17], [17, 18], [18, 19], [19, 20],// Pinky
+        [0, 17]                                // Palm base
+    ];
+
+    function drawLandmarks(landmarksList) {
+        if (!overlayCanvas || !overlayCtx) return;
+
+        const targetW = video.videoWidth || 640;
+        const targetH = video.videoHeight || 480;
+        if (overlayCanvas.width !== targetW || overlayCanvas.height !== targetH) {
+            overlayCanvas.width = targetW;
+            overlayCanvas.height = targetH;
+        }
+
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (!landmarksList || landmarksList.length === 0) return;
+
+        const W = overlayCanvas.width;
+        const H = overlayCanvas.height;
+
+        landmarksList.forEach(hand => {
+            // Draw skeleton lines
+            overlayCtx.lineWidth = 3;
+            overlayCtx.strokeStyle = "#38bdf8";
+            overlayCtx.lineCap = "round";
+            overlayCtx.lineJoin = "round";
+
+            HAND_CONNECTIONS.forEach(([i, j]) => {
+                const p1 = hand[i];
+                const p2 = hand[j];
+                if (p1 && p2) {
+                    overlayCtx.beginPath();
+                    overlayCtx.moveTo(p1[0] * W, p1[1] * H);
+                    overlayCtx.lineTo(p2[0] * W, p2[1] * H);
+                    overlayCtx.stroke();
+                }
+            });
+
+            // Draw joint nodes
+            hand.forEach((p, idx) => {
+                const px = p[0] * W;
+                const py = p[1] * H;
+                overlayCtx.beginPath();
+                overlayCtx.arc(px, py, idx % 4 === 0 ? 5 : 3.5, 0, 2 * Math.PI);
+                overlayCtx.fillStyle = idx % 4 === 0 ? "#2563eb" : "#ffffff";
+                overlayCtx.fill();
+                overlayCtx.lineWidth = 1.5;
+                overlayCtx.strokeStyle = "#0284c7";
+                overlayCtx.stroke();
+            });
+        });
+    }
+
     // --- Camera Control ---
     if (btnToggleCam) {
         btnToggleCam.addEventListener("click", async () => {
             if (!isStreaming) {
                 try {
                     localStream = await navigator.mediaDevices.getUserMedia({
-                        video: { width: 640, height: 480, facingMode: "user" }
+                        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }
                     });
                     video.srcObject = localStream;
                     await video.play();
 
-                    hiddenCanvas.width = 640;
-                    hiddenCanvas.height = 480;
+                    video.style.display = "block";
+                    if (overlayCanvas) overlayCanvas.style.display = "block";
+                    if (videoPlaceholder) videoPlaceholder.style.display = "none";
+
+                    hiddenCanvas.width = 480;
+                    hiddenCanvas.height = 360;
 
                     isStreaming = true;
                     btnToggleCam.innerHTML = '<i class="fa-solid fa-power-off"></i> Stop Camera';
                     btnToggleCam.style.background = "#ef4444";
                     btnToggleCam.style.color = "#ffffff";
-                    if (videoPlaceholder) videoPlaceholder.style.display = "none";
-                    if (annotatedStream) annotatedStream.style.display = "block";
 
-                    streamInterval = setInterval(sendFrameForInference, 130);
+                    streamInterval = setInterval(sendFrameForInference, 180);
                 } catch (err) {
                     console.error("Camera access error:", err);
                     alert("Could not access webcam. Please check camera permissions in your browser.");
@@ -208,14 +270,23 @@ document.addEventListener("DOMContentLoaded", () => {
         if (streamInterval) clearInterval(streamInterval);
         if (localStream) {
             localStream.getTracks().forEach(track => track.stop());
+            localStream = null;
+        }
+        if (video) {
+            video.srcObject = null;
+            video.style.display = "none";
+        }
+        if (overlayCanvas) {
+            overlayCanvas.style.display = "none";
+            if (overlayCtx) overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         }
         isStreaming = false;
+        frameInFlight = false;
         if (btnToggleCam) {
             btnToggleCam.innerHTML = '<i class="fa-solid fa-video"></i> Start Camera';
             btnToggleCam.style.background = "";
             btnToggleCam.style.color = "";
         }
-        if (annotatedStream) annotatedStream.style.display = "none";
         if (videoPlaceholder) videoPlaceholder.style.display = "flex";
         if (predictedSignEl) predictedSignEl.innerText = "-";
         if (confidenceScoreEl) confidenceScoreEl.innerText = "0%";
@@ -227,22 +298,38 @@ document.addEventListener("DOMContentLoaded", () => {
     let frameInFlight = false;
     async function sendFrameForInference() {
         if (!isStreaming || frameInFlight) return;
+        if (!video || video.readyState < 2) return; // Wait for active video frame
+
         frameInFlight = true;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
 
         try {
             canvasCtx.drawImage(video, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
-            const dataUrl = hiddenCanvas.toDataURL("image/jpeg", 0.65);
+            const dataUrl = hiddenCanvas.toDataURL("image/jpeg", 0.55);
 
             const res = await fetch("/api/predict_frame", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ image: dataUrl, mode: currentMode })
+                body: JSON.stringify({ image: dataUrl, mode: currentMode }),
+                signal: controller.signal
             });
+
+            clearTimeout(timeoutId);
+
+            if (!res.ok) {
+                throw new Error(`Server returned ${res.status}`);
+            }
 
             const data = await res.json();
             if (data.status === "success") {
-                if (annotatedStream) annotatedStream.src = data.annotated_image;
                 if (handsCountEl) handsCountEl.innerText = data.hands_detected;
+
+                if (data.landmarks && data.landmarks.length > 0) {
+                    drawLandmarks(data.landmarks);
+                } else {
+                    drawLandmarks([]);
+                }
 
                 if (data.predicted_sign) {
                     currentPredictedSign = data.predicted_sign;
@@ -269,7 +356,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
         } catch (err) {
-            console.error("Inference failed:", err);
+            clearTimeout(timeoutId);
+            if (err.name !== "AbortError") {
+                console.warn("Inference frame skipped or failed:", err.message);
+            }
         } finally {
             frameInFlight = false;
         }
