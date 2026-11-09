@@ -71,6 +71,10 @@ load_all_models()
 def index():
     return render_template("index.html")
 
+@app.route("/health")
+def health():
+    return jsonify({"status": "healthy", "service": "isl-recognition"}), 200
+
 @app.route("/api/switch_mode", methods=["POST"])
 def switch_mode():
     global ACTIVE_MODE, PREDICTION_HISTORY

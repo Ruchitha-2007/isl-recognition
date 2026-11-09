@@ -295,9 +295,63 @@ document.addEventListener("DOMContentLoaded", () => {
         resetHoldProgress();
     }
 
+    // --- Client-Side Real-Time MediaPipe Hand Tracking ---
+    let clientHands = null;
+    let clientMediaPipeActive = false;
+
+    function initClientMediaPipe() {
+        if (typeof Hands !== "undefined" && !clientHands) {
+            try {
+                clientHands = new Hands({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+                });
+                clientHands.setOptions({
+                    maxNumHands: 2,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.35,
+                    minTrackingConfidence: 0.3
+                });
+
+                clientHands.onResults((results) => {
+                    if (!isStreaming) return;
+                    clientMediaPipeActive = true;
+                    const count = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+                    if (handsCountEl) {
+                        handsCountEl.innerText = count;
+                        handsCountEl.style.color = count > 0 ? "#10b981" : "";
+                    }
+
+                    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                        const clientCoords = results.multiHandLandmarks.map(hand => 
+                            hand.map(lm => [lm.x, lm.y])
+                        );
+                        drawLandmarks(clientCoords);
+                    } else {
+                        drawLandmarks([]);
+                    }
+                });
+                console.log("Client-side MediaPipe initialized successfully!");
+            } catch (err) {
+                console.warn("Client MediaPipe initialization notice:", err);
+            }
+        }
+    }
+
+    let consecutiveErrors = 0;
+
     // --- Frame Inference Loop ---
     async function runInferenceLoop() {
+        initClientMediaPipe();
+
         while (isStreaming) {
+            if (clientHands && video && video.readyState >= 2) {
+                try {
+                    await clientHands.send({ image: video });
+                } catch (e) {
+                    // Ignore client frame send hiccups
+                }
+            }
+
             await sendFrameForInference();
             await new Promise(resolve => setTimeout(resolve, 150));
         }
@@ -341,15 +395,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const data = await res.json();
             if (data.status === "success") {
-                if (handsCountEl) {
-                    handsCountEl.innerText = data.hands_detected;
-                    handsCountEl.style.color = data.hands_detected > 0 ? "#10b981" : "";
-                }
+                consecutiveErrors = 0;
 
-                if (data.landmarks && data.landmarks.length > 0) {
-                    drawLandmarks(data.landmarks);
-                } else {
-                    drawLandmarks([]);
+                // Update hands count & landmarks from server if client MediaPipe is not active
+                if (!clientMediaPipeActive) {
+                    if (handsCountEl) {
+                        handsCountEl.innerText = data.hands_detected;
+                        handsCountEl.style.color = data.hands_detected > 0 ? "#10b981" : "";
+                    }
+
+                    if (data.landmarks && data.landmarks.length > 0) {
+                        drawLandmarks(data.landmarks);
+                    } else {
+                        drawLandmarks([]);
+                    }
                 }
 
                 if (data.predicted_sign) {
@@ -378,8 +437,10 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         } catch (err) {
             clearTimeout(timeoutId);
-            if (err.name !== "AbortError") {
-                console.warn("Inference frame skipped or failed:", err.message);
+            consecutiveErrors++;
+            if (consecutiveErrors >= 3 && (!currentPredictedSign || currentPredictedSign === "-")) {
+                if (predictedSignEl) predictedSignEl.innerText = "...";
+                if (confidenceScoreEl) confidenceScoreEl.innerText = "Connecting";
             }
         } finally {
             frameInFlight = false;
