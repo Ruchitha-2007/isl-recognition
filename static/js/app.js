@@ -201,22 +201,21 @@ document.addEventListener("DOMContentLoaded", () => {
         const H = overlayCanvas.height;
 
         landmarksList.forEach(hand => {
-            // Draw skeleton lines
+            // Draw all skeleton lines in one single stroke pass for max GPU speed
             overlayCtx.lineWidth = 3;
             overlayCtx.strokeStyle = "#38bdf8";
             overlayCtx.lineCap = "round";
             overlayCtx.lineJoin = "round";
-
+            overlayCtx.beginPath();
             HAND_CONNECTIONS.forEach(([i, j]) => {
                 const p1 = hand[i];
                 const p2 = hand[j];
                 if (p1 && p2) {
-                    overlayCtx.beginPath();
                     overlayCtx.moveTo(p1[0] * W, p1[1] * H);
                     overlayCtx.lineTo(p2[0] * W, p2[1] * H);
-                    overlayCtx.stroke();
                 }
             });
+            overlayCtx.stroke();
 
             // Draw joint nodes
             hand.forEach((p, idx) => {
@@ -239,7 +238,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!isStreaming) {
                 try {
                     localStream = await navigator.mediaDevices.getUserMedia({
-                        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }
+                        video: {
+                            width: { ideal: 640, max: 640 },
+                            height: { ideal: 480, max: 480 },
+                            facingMode: "user"
+                        }
                     });
                     video.srcObject = localStream;
                     await video.play();
@@ -313,9 +316,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
                 clientHands.setOptions({
                     maxNumHands: 2,
-                    modelComplexity: 1,
-                    minDetectionConfidence: 0.35,
-                    minTrackingConfidence: 0.3
+                    modelComplexity: 0,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
                 });
 
                 clientHands.onResults((results) => {
@@ -348,9 +351,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // High-speed 60 FPS camera tracking loop via requestAnimationFrame
+    // High-speed camera tracking loop synchronized with camera sensor frames
     let isProcessingHands = false;
-    async function startLocalTracking() {
+    function scheduleNextFrame() {
+        if (!isStreaming) return;
+        if (video && "requestVideoFrameCallback" in video) {
+            video.requestVideoFrameCallback(processVideoFrame);
+        } else {
+            requestAnimationFrame(processVideoFrame);
+        }
+    }
+
+    async function processVideoFrame() {
         if (!isStreaming) return;
         if (clientHands && video && video.readyState >= 2 && !isProcessingHands) {
             isProcessingHands = true;
@@ -362,9 +374,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 isProcessingHands = false;
             }
         }
-        if (isStreaming) {
-            requestAnimationFrame(startLocalTracking);
-        }
+        scheduleNextFrame();
+    }
+
+    function startLocalTracking() {
+        scheduleNextFrame();
     }
 
     let consecutiveErrors = 0;
