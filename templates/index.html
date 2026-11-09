@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indian Sign Language (ISL) Platform</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=6.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Core guarantee styles to ensure instant, pristine rendering */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88rem;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .data-table th {
+            background-color: #eff6ff;
+            color: #1e40af;
+            font-weight: 700;
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 2px solid #bfdbfe;
+        }
+        .data-table td {
+            padding: 0.7rem 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+        }
+        .data-table tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+        .data-table tr:hover {
+            background-color: #f0fdf4;
+        }
+        .stage-image-card {
+            width: 220px !important;
+            height: 220px !important;
+            max-width: 220px !important;
+            max-height: 220px !important;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #2563eb;
+            background: #0f172a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto;
+        }
+        .stage-image-card img {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Clean White & Blue Header -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-hands-asl-interpreting"></i>
+                </div>
+                <div>
+                    <h1>ISL Studio</h1>
+                    <span class="tagline">Indian Sign Language Platform</span>
+                </div>
+            </div>
+            <nav class="nav-tabs">
+                <button class="nav-tab active" data-tab="tab-isl2text">
+                    <i class="fa-solid fa-video"></i> Sign to Text
+                </button>
+                <button class="nav-tab" data-tab="tab-text2isl">
+                    <i class="fa-solid fa-keyboard"></i> Text to Sign
+                </button>
+                <button class="nav-tab" data-tab="tab-vocabulary">
+                    <i class="fa-solid fa-list-check"></i> Recognizable Words
+                </button>
+                <button class="nav-tab" data-tab="tab-metrics">
+                    <i class="fa-solid fa-chart-column"></i> Model Report
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <!-- ========================================== -->
+        <!-- TAB 1: SIGN TO TEXT                        -->
+        <!-- ========================================== -->
+        <section id="tab-isl2text" class="tab-panel active">
+            <!-- Mode Switcher (Alphabets vs Words) & Auto-Lock -->
+            <div class="top-control-bar">
+                <div class="mode-pills">
+                    <button id="btn-mode-alphabets" class="mode-pill active" data-mode="alphabets">
+                        <i class="fa-solid fa-font"></i> Alphabets (A–Z)
+                    </button>
+                    <button id="btn-mode-words" class="mode-pill" data-mode="words">
+                        <i class="fa-solid fa-comments"></i> Words & Phrases
+                    </button>
+                </div>
+
+                <div class="header-right-actions">
+                    <button id="btn-quick-vocab" class="btn-text-action">
+                        <i class="fa-solid fa-book-bookmark"></i> <span>View All 43 Words</span>
+                    </button>
+                    <!-- STRICTLY NO ICON before Hands-Free Auto Add -->
+                    <div class="auto-lock-toggle">
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-autolock" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label">Hands-Free Auto Add</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="main-grid">
+                <!-- Left: Camera Feed -->
+                <div class="card video-card">
+                    <div class="video-container">
+                        <video id="webcam" autoplay playsinline muted style="display: none !important; position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;"></video>
+                        <img id="annotated-stream" alt="Live Hand Feed" src="" style="display: none;">
+                        <div id="video-placeholder" class="video-placeholder">
+                            <i class="fa-solid fa-camera"></i>
+                            <p>Camera is currently idle</p>
+                            <span>Click "Start Camera" below to begin</span>
+                        </div>
+
+                        <!-- Auto-Lock Visual Progress Bar -->
+                        <div id="hold-progress-bar" class="hold-progress-bar" style="display: none;">
+                            <div id="hold-progress-fill" class="hold-progress-fill"></div>
+                        </div>
+                    </div>
+
+                    <!-- Video Controls (Start Camera occupies full width; Space and Backspace work via keyboard) -->
+                    <div class="video-controls">
+                        <button id="btn-toggle-cam" class="btn btn-primary btn-full-width">
+                            <i class="fa-solid fa-video"></i> Start Camera
+                        </button>
+                    </div>
+
+                    <!-- Clean Detection Strip -->
+                    <div class="detection-strip">
+                        <div class="strip-cell">
+                            <span class="cell-label">Hands</span>
+                            <span id="hands-count" class="cell-value">0</span>
+                        </div>
+                        <div class="strip-cell primary-cell">
+                            <span class="cell-label">Sign Detected</span>
+                            <span id="predicted-sign" class="cell-value highlight">-</span>
+                        </div>
+                        <div class="strip-cell">
+                            <span class="cell-label">Confidence</span>
+                            <span id="confidence-score" class="cell-value">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Unified Clean Text Box & Nearest Word Suggestions -->
+                <div class="card output-card">
+                    <div class="output-header">
+                        <h2>Translated Text</h2>
+                        <div class="output-actions">
+                            <button id="btn-speak-text" class="btn-action-icon" title="Read text aloud">
+                                <i class="fa-solid fa-volume-high"></i>
+                            </button>
+                            <button id="btn-copy-text" class="btn-action-icon" title="Copy to clipboard">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                            <button id="btn-clear-text" class="btn-action-icon danger" title="Clear text">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Single Unified Text Box -->
+                    <div class="unified-text-box">
+                        <div id="full-text-display" class="full-text-display">
+                            <span id="text-content"></span><span class="blinking-cursor">|</span><span class="placeholder-text" id="placeholder-msg">Signed characters and words will appear here...</span>
+                        </div>
+                    </div>
+
+                    <!-- Nearest Matching Word Suggestions (Visible ONLY in Alphabets Mode) -->
+                    <div id="suggestions-wrapper" class="suggestions-wrapper">
+                        <div class="suggestions-heading">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            <span>Nearest Word Suggestions</span>
+                            <small>(Click any word to insert)</small>
+                        </div>
+                        <div id="suggestions-container" class="suggestions-chips">
+                            <span class="hint">Spell letters to see instant word suggestions...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: TEXT TO ISL (ANIMATION SEQUENCE ONLY) -->
+        <!-- ========================================== -->
+        <section id="tab-text2isl" class="tab-panel">
+            <div class="card">
+                <div class="text2isl-input-row">
+                    <input type="text" id="text2isl-input" placeholder="Type an English word or phrase (e.g. HELLO, HOW ARE YOU, INDIA)..." value="HELLO">
+                    <button id="btn-translate-text" class="btn btn-primary">
+                        <i class="fa-solid fa-magnifying-glass"></i> Show Signs
+                    </button>
+                </div>
+
+                <!-- ANIMATION SEQUENCE PLAYER (Compact, elegant, no images under it) -->
+                <div class="animation-stage">
+                    <div class="stage-image-card">
+                        <img id="spotlight-img" src="/static/signs/real_alphabets/H.jpg" alt="Real Sign Photo">
+                    </div>
+                    <div class="stage-controls-side">
+                        <span class="stage-tag">Current Sign</span>
+                        <h2 id="spotlight-letter">H</h2>
+                        
+                        <div class="playback-controls-group">
+                            <button id="btn-prev-sign" class="btn btn-sm btn-secondary"><i class="fa-solid fa-backward"></i> Prev</button>
+                            <button id="btn-pause-sign" class="btn btn-sm btn-primary"><i class="fa-solid fa-play"></i> Play</button>
+                            <button id="btn-next-sign" class="btn btn-sm btn-secondary"><i class="fa-solid fa-forward"></i> Next</button>
+                        </div>
+                        
+                        <div class="speed-control-row">
+                            <label for="anim-speed">Speed:</label>
+                            <select id="anim-speed" class="select-clean">
+                                <option value="1500">Slow (1.5s)</option>
+                                <option value="1000" selected>Normal (1.0s)</option>
+                                <option value="600">Fast (0.6s)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: RECOGNIZABLE WORDS (REPLACES GUIDE) -->
+        <!-- ========================================== -->
+        <section id="tab-vocabulary" class="tab-panel">
+            <div class="card">
+                <div class="guide-header">
+                    <h2>Recognizable Indian Sign Language Vocabulary</h2>
+                </div>
+
+                <div class="vocab-filter-row">
+                    <input type="text" id="vocab-search-input" placeholder="Search words or letters (e.g. MORNING, HELP, A)..." class="vocab-search-box">
+                </div>
+
+                <div class="vocab-section-block">
+                    <h3 class="vocab-section-title"><i class="fa-solid fa-comments"></i> 43 Full Words & Phrases</h3>
+                    <div id="vocab-words-grid" class="vocab-card-grid">
+                        <!-- Populated dynamically via JS -->
+                    </div>
+                </div>
+
+                <div class="vocab-section-block mt-4">
+                    <h3 class="vocab-section-title"><i class="fa-solid fa-font"></i> 26 Alphabets (A to Z)</h3>
+                    <div id="vocab-alphabets-grid" class="vocab-card-grid">
+                        <!-- Populated dynamically via JS -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 4: MODEL EVALUATION REPORT             -->
+        <!-- ========================================== -->
+        <section id="tab-metrics" class="tab-panel">
+            <div class="metrics-nav-bar">
+                <button id="btn-metric-alphabets" class="metric-btn active" data-metric-mode="alphabets">
+                    <i class="fa-solid fa-font"></i> Alphabets Model (97.37% Accuracy)
+                </button>
+                <button id="btn-metric-words" class="metric-btn" data-metric-mode="words">
+                    <i class="fa-solid fa-comments"></i> Words & Phrases Model (97.82% Accuracy)
+                </button>
+            </div>
+
+            <div class="metrics-cards-row">
+                <div class="metric-card">
+                    <span class="card-caption">Test Accuracy</span>
+                    <h2 id="metric-accuracy" class="card-number">97.4%</h2>
+                </div>
+                <div class="metric-card">
+                    <span class="card-caption">Macro Precision</span>
+                    <h2 id="metric-precision" class="card-number">97.4%</h2>
+                </div>
+                <div class="metric-card">
+                    <span class="card-caption">Macro Recall</span>
+                    <h2 id="metric-recall" class="card-number">97.2%</h2>
+                </div>
+                <div class="metric-card">
+                    <span class="card-caption">Macro F1-Score</span>
+                    <h2 id="metric-f1" class="card-number">97.3%</h2>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <h3 class="table-heading">Classification Performance Report</h3>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Class</th>
+                                <th>Precision</th>
+                                <th>Recall</th>
+                                <th>F1-Score</th>
+                                <th>Test Support</th>
+                            </tr>
+                        </thead>
+                        <tbody id="metrics-table-body">
+                            <!-- Populated dynamically via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <canvas id="hidden-canvas" style="display: none;"></canvas>
+    <script src="/static/js/app.js?v=6.0"></script>
+</body>
+</html>
